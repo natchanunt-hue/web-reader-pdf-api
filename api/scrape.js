@@ -1,12 +1,17 @@
 const chromium = require('@sparticuz/chromium');
 const puppeteer = require('puppeteer-core');
+const path = require('path'); // ✅ บรรทัดนี้คุณมีแล้ว (ดีมาก)
 
 // ----------------------------------------------------------------------
-// 1. getBrowser Function (ถูกปรับให้ใช้ Render/Server Env โดยตรง)
+// 1. getBrowser Function
 // ----------------------------------------------------------------------
 const getBrowser = async () => {
     
-    // 🔥 Argument Set ที่แข็งแกร่งที่สุดสำหรับแก้ libnss3.so
+    // ✅✅✅ เพิ่มบรรทัดนี้ด่วน! (ไม่งั้นภาษาไทยไม่มา) ✅✅✅
+    // อธิบาย: สั่งให้ Chrome โหลดไฟล์ฟอนต์จากโฟลเดอร์ fonts ที่อยู่ข้างนอก
+    await chromium.font(path.join(__dirname, '../fonts', 'Sarabun-Regular.ttf'));
+
+    // 🔥 Argument Set (เหมือนเดิม)
     const launchArgs = [
         '--no-sandbox', 
         '--disable-setuid-sandbox',
@@ -22,7 +27,6 @@ const getBrowser = async () => {
         '--mute-audio'
     ];
 
-    // เนื่องจาก Render เป็น Full Web Service เราจึงใช้ Logic ที่แข็งแกร่งสำหรับ Cloud/Lambda
     return puppeteer.launch({
         args: launchArgs, 
         defaultViewport: chromium.defaultViewport,
@@ -31,8 +35,6 @@ const getBrowser = async () => {
         ignoreDefaultArgs: ['--disable-extensions'], 
         ignoreHTTPSErrors: true
     });
-    
-    // 🚨 Logic การเปิด Browser สำหรับ Local Machine ถูกลบออก (เพื่อ Deploy บน Render เท่านั้น)
 };
 
 // ----------------------------------------------------------------------

@@ -1,11 +1,11 @@
 {
   "name": "cmd-pdf-generator",
   "version": "1.0.0",
-  "description": "PDF generation API using Puppeteer for Render (Final Font Fix)", 
+  "description": "PDF generation API using Puppeteer for Render (Final CSS Fix)", 
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "install:dependencies": "npm install && apt-get update && apt-get install -y fonts-thai-tlwg", 
+    "install:dependencies": "npm install",
     "build": "echo 'Building Render Node Service...'"
   },
   "dependencies": {
