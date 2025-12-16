@@ -1,7 +1,7 @@
 {
   "name": "cmd-pdf-generator",
   "version": "1.0.0",
-  "description": "PDF generation API using Puppeteer",
+  "description": "PDF generation API using Puppeteer (Final Cache Breaker)",
   "main": "api/scrape.js",
   "scripts": {
     "start": "vercel dev",
