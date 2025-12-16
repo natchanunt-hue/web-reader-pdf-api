@@ -1,6 +1,15 @@
 {
-  "rewrites": [
-    { "source": "/web-reader/api/(.*)", "destination": "/api/scrape" },
-    { "source": "/web-reader", "destination": "/index.html" }
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    }
   ]
 }
