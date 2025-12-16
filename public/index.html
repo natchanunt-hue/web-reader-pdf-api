@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web to PDF (Server Side)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Sarabun', sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
+        h2 { margin-top: 0; color: #333; }
+        input { width: 100%; padding: 12px; margin: 20px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+        button { background: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-size: 16px; cursor: pointer; width: 100%; transition: 0.3s; }
+        button:hover { background: #1d4ed8; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #status { margin-top: 20px; color: #666; font-size: 14px; min-height: 20px; }
+        .tips { font-size: 12px; color: #999; margin-top: 20px; text-align: left; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>📄 Web to PDF (Pro)</h2>
+    <p>ระบบจำลอง Browser จริง ภาพครบ 100%</p>
+    
+    <input type="text" id="urlInput" placeholder="วางลิงก์ข่าวที่นี่... (Sanook, Siamrath, etc.)">
+    <button id="btnDownload" onclick="downloadPdf()">ดาวน์โหลด PDF</button>
+    
+    <div id="status"></div>
+
+    <div class="tips">
+        * ระบบจะทำการเปิดหน้าเว็บจริง ลบโฆษณา และบันทึกเป็น PDF<br>
+        * อาจใช้เวลา 5-10 วินาที ขึ้นอยู่กับความเร็วของเว็บต้นทาง
+    </div>
+</div>
+
+<script>
+    async function downloadPdf() {
+        const url = document.getElementById('urlInput').value;
+        const btn = document.getElementById('btnDownload');
+        const status = document.getElementById('status');
+
+        if (!url) return alert('กรุณาใส่ลิงก์ก่อนครับ');
+
+        // UI Loading
+        btn.disabled = true;
+        btn.innerText = "กำลังประมวลผล (เปิดหน้าเว็บจริง)...";
+        status.innerText = "⏳ ระบบกำลังเปิด Chrome เพื่อบันทึกหน้าเว็บ กรุณารอสักครู่...";
+
+        try {
+            // เรียก Backend เพื่อขอไฟล์ PDF
+            const response = await fetch(`/web-reader/api/scrape?url=${encodeURIComponent(url)}`);
+
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'เกิดข้อผิดพลาด');
+            }
+
+            // รับข้อมูล Header เพื่อมาตั้งชื่อไฟล์
+            const title = decodeURIComponent(response.headers.get('X-Title') || 'document');
+            const site = response.headers.get('X-Site') || 'Web';
+            const dateStr = response.headers.get('X-Date');
+            
+            // จัดการวันที่สำหรับชื่อไฟล์
+            let fileDate = new Date().toISOString().split('T')[0];
+            if (dateStr) {
+                const d = new Date(dateStr);
+                if (!isNaN(d)) fileDate = d.toISOString().split('T')[0];
+            }
+
+            // แปลงข้อมูลที่ได้เป็นไฟล์ PDF (Blob)
+            const blob = await response.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
+            
+            // สร้างลิงก์ดาวน์โหลดจำลองแล้วกดคลิก
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = `${fileDate}_${site}_${title.substring(0, 30)}.pdf`; // ชื่อไฟล์: 2023-12-16_Siamrath_หัวข้อ.pdf
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+
+            status.innerText = "✅ ดาวน์โหลดเสร็จสิ้น!";
+
+        } catch (error) {
+            status.innerText = "❌ ผิดพลาด: " + error.message;
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "ดาวน์โหลด PDF";
+        }
+    }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "web-reader",
+  "version": "1.0.0",
+  "main": "api/scrape.js",
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "@sparticuz/chromium": "^119.0.2",
+    "cors": "^2.8.5",
+    "express": "^5.2.1",
+    "jsdom": "^27.3.0",
+    "puppeteer-core": "^21.11.0"
+  },
+  "scripts": {
+    "dev": "node local-server.js"
+  }
+}

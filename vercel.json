@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/web-reader/api/(.*)", "destination": "/api/scrape" },
+    { "source": "/web-reader", "destination": "/index.html" }
+  ]
+}
