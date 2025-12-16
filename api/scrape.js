@@ -136,19 +136,23 @@ const scrapeAndGeneratePdf = async (req, res) => {
         // 🎨 CSS Injection
         // ============================================================
         await page.addStyleTag({
-            content: `
-                @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
-                body { background-color: #fff !important; font-family: 'Sarabun', sans-serif !important; margin: 0 !important; padding: 0 !important; }
-                
-                /* บังคับ Header ไม่ให้ลอย */
-                header, nav, .navbar, .menu, .top-bar { position: static !important; display: block !important; width: 100% !important; }
-                /* ซ่อนของลอยอื่นๆ */
-                div[style*="position: fixed"], div[style*="position: sticky"], .sticky-nav { display: none !important; }
-                .empty-space, .spacer { display: none !important; }
-                img { max-width: 100% !important; height: auto !important; page-break-inside: avoid; display: block; margin: 10px auto; }
-                a { text-decoration: none; color: black; pointer-events: none; }
-            `
-        });
+    content: `
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+
+        /* 🚨 แก้ไขบรรทัดนี้: เพิ่ม Thonburi, Tahoma เป็น Fallback */
+        body { background-color: #fff !important; font-family: 'Sarabun', Thonburi, Tahoma, sans-serif !important; margin: 0 !important; padding: 0 !important; }
+
+        /* บังคับใช้ฟอนต์ในการพิมพ์ */
+        @media print {
+            * {
+                font-family: 'Sarabun', Thonburi, Tahoma, sans-serif !important;
+            }
+        }
+
+        header, nav, .navbar, .menu, .top-bar { position: static !important; display: block !important; width: 100% !important; }
+        /* ... โค้ด CSS ส่วนที่เหลือ ... */
+    `
+});
 
         // ============================================================
         // 💾 Metadata & Print
