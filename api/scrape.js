@@ -25,6 +25,8 @@ const getBrowser = async () => {
             defaultViewport: chromium.defaultViewport,
             executablePath: await chromium.executablePath(),
             headless: chromium.headless,
+            // 🚨 การแก้ไขที่เด็ดขาด: บังคับให้ใช้ Argument ของเราเท่านั้น
+            ignoreDefaultArgs: ['--disable-extensions'], 
             ignoreHTTPSErrors: true
         });
     } else {
