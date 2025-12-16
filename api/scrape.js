@@ -91,9 +91,9 @@ const scrapeAndGeneratePdf = async (req, res) => {
                 return;
             }
 
-            // ✅ 2. ยอมให้โหลด Font (บางเว็บใช้ Font icon แสดงผล Captcha)
-            // ลบ 'font' ออกจากรายการแบน
-            if (['media', 'websocket', 'manifest', 'image'].includes(resourceType)) {
+            // ✅ 2. ยอมให้โหลด Font และ Image (เพื่อให้รูปข่าวมา)
+            // เราลบ 'image' ออกจากรายการแบนแล้ว
+            if (['media', 'websocket', 'manifest'].includes(resourceType)) {
                 request.abort();
             } else {
                 request.continue();
@@ -130,39 +130,44 @@ const scrapeAndGeneratePdf = async (req, res) => {
         await new Promise(r => setTimeout(r, 15000));
 
         // ============================================================
-        // 🧹 Cleaning & Compressing (สูตร V14.1)
+        // 🧹 Cleaning & Compressing (สูตร V14.2 Safe Mode)
         // ============================================================
         await page.evaluate(async () => {
-            // A. ลบ Popup / Ads (เก็บ Header ไว้ตามคำขอ)
-            const clutter = document.querySelectorAll(
-                '.modal, .overlay, .popup, .cookie-consent, #cookie-consent, .ads-interstitial, ' + 
-                'iframe, .ads, .advertisement, div[id^="div-gpt-ad"], .taboola, .outbrain, .box-relate, ' +
-                '.social-share, .share-buttons, .sticky-share, .floating-bar, ' +
-                'footer, aside, .sidebar'
-            );
-            clutter.forEach(el => el.remove());
+            try {
+                // A. ลบ Popup / Ads
+                const clutter = document.querySelectorAll(
+                    '.modal, .overlay, .popup, .cookie-consent, #cookie-consent, .ads-interstitial, ' + 
+                    'iframe, .ads, .advertisement, div[id^="div-gpt-ad"], .taboola, .outbrain, .box-relate, ' +
+                    '.social-share, .share-buttons, .sticky-share, .floating-bar, ' +
+                    'footer, aside, .sidebar'
+                );
+                clutter.forEach(el => el.remove());
 
-            // B. ปลดล็อค Scroll
-            document.body.style.overflow = 'visible';
-            document.documentElement.style.overflow = 'visible';
+                // B. ปลดล็อค Scroll (ใส่ if ป้องกัน Error)
+                if (document.body) document.body.style.overflow = 'visible';
+                if (document.documentElement) document.documentElement.style.overflow = 'visible';
 
-            // C. บีบอัดรูปภาพ
-            const images = document.querySelectorAll('img');
-            for (let img of images) {
-                if (img.src && !img.src.endsWith('.svg')) {
-                    try {
-                        const canvas = document.createElement('canvas');
-                        const ctx = canvas.getContext('2d');
-                        let w = img.naturalWidth || img.width;
-                        let h = img.naturalHeight || img.height;
-                        if (w > 1000) { const s = 1000/w; w=1000; h=h*s; }
-                        if (w < 50) continue;
-                        canvas.width = w; canvas.height = h;
-                        ctx.drawImage(img, 0, 0, w, h);
-                        img.src = canvas.toDataURL('image/jpeg', 0.5); 
-                        img.removeAttribute('srcset'); 
-                    } catch (e) {}
+                // C. บีบอัดรูปภาพ
+                const images = document.querySelectorAll('img');
+                for (let img of images) {
+                    if (img.src && !img.src.endsWith('.svg')) {
+                        try {
+                            const canvas = document.createElement('canvas');
+                            const ctx = canvas.getContext('2d');
+                            let w = img.naturalWidth || img.width;
+                            let h = img.naturalHeight || img.height;
+                            if (w > 1000) { const s = 1000/w; w=1000; h=h*s; }
+                            if (w < 50) continue;
+                            canvas.width = w; canvas.height = h;
+                            ctx.drawImage(img, 0, 0, w, h);
+                            img.src = canvas.toDataURL('image/jpeg', 0.5); 
+                            img.removeAttribute('srcset'); 
+                        } catch (e) {}
+                    }
                 }
+            } catch (err) {
+                // ถ้ามี error ในส่วน clean ให้ข้ามไปเลย ไม่ต้องพังทั้งระบบ
+                console.log('Cleanup minor error:', err.message);
             }
         });
 
