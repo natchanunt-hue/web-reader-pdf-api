@@ -9,7 +9,7 @@
     "build": "echo 'Building Vercel Node Function...'"
   },
   "dependencies": {
-    "@sparticuz/chromium": "^120.0.0",
-    "puppeteer-core": "^22.0.0"
+    "@sparticuz/chromium": "^123.0.1",  
+    "puppeteer-core": "^22.0.0"          
   }
 }
