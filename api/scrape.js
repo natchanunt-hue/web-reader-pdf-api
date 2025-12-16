@@ -4,14 +4,14 @@ const puppeteer = require('puppeteer-core');
 const getBrowser = async () => {
     const isVercel = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_VERSION;
     
-    // ตั้งค่า Argument ให้เนียนที่สุด (Anti-Detection)
+    // 🔥 แก้ไขตรงนี้: เพิ่ม --disable-dev-shm-usage และ --no-sandbox 
+    // ในส่วนของ Vercel (isVercel) เพื่อให้รันบน Lambda Environment ได้เสถียรขึ้น
     const launchArgs = [
         ...chromium.args,
         '--disable-gpu',
-        '--disable-dev-shm-usage',
+        '--disable-dev-shm-usage', // <--- ตัวนี้ช่วยแก้ปัญหา Memory/Library
         '--single-process',
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
+        '--no-sandbox', // <--- ตัวนี้ช่วยแก้ปัญหาเรื่องสิทธิ์ (Permissions)
         // 🔥 สำคัญ: สั่งปิดฟีเจอร์ที่บอกว่าเราเป็นบอท
         '--disable-blink-features=AutomationControlled', 
         '--hide-scrollbars',
@@ -20,7 +20,8 @@ const getBrowser = async () => {
 
     if (isVercel) {
         return puppeteer.launch({
-            args: launchArgs,
+            // ใช้ launchArgs ที่ปรับแล้ว
+            args: launchArgs, 
             defaultViewport: chromium.defaultViewport,
             executablePath: await chromium.executablePath(),
             headless: chromium.headless,
@@ -28,8 +29,9 @@ const getBrowser = async () => {
         });
     } else {
         return puppeteer.launch({
+            // สำหรับ Local Test ก็ใช้ launchArgs เดียวกัน
             args: launchArgs,
-            defaultViewport: { width: 1366, height: 768 }, // ขนาดจอมาตรฐาน Laptop
+            defaultViewport: { width: 1366, height: 768 }, 
             executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', 
             headless: "new",
             ignoreHTTPSErrors: true
