@@ -1,16 +1,15 @@
 {
-  "name": "web-reader",
+  "name": "cmd-pdf-generator",
   "version": "1.0.0",
+  "description": "PDF generation API using Puppeteer",
   "main": "api/scrape.js",
-  "dependencies": {
-    "@mozilla/readability": "^0.6.0",
-    "@sparticuz/chromium": "^119.0.2",
-    "cors": "^2.8.5",
-    "express": "^5.2.1",
-    "jsdom": "^27.3.0",
-    "puppeteer-core": "^21.11.0"
-  },
   "scripts": {
-    "dev": "node local-server.js"
+    "start": "vercel dev",
+    "install:dependencies": "npm install",
+    "build": "echo 'Building Vercel Node Function...'"
+  },
+  "dependencies": {
+    "@sparticuz/chromium": "^120.0.0",
+    "puppeteer-core": "^22.0.0"
   }
 }
