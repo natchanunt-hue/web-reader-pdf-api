@@ -77,13 +77,23 @@ const scrapeAndGeneratePdf = async (req, res) => {
         });
 
         // ============================================================
-        // 📥 Loading Content
+        // 📥 Loading Content (ฉบับแก้ Cloudflare)
         // ============================================================
         
-        // Block ของหนักๆ (วิดีโอ/ฟอนต์)
         await page.setRequestInterception(true);
         page.on('request', (request) => {
-            if (['media', 'websocket', 'manifest', 'font'].includes(request.resourceType())) {
+            const reqUrl = request.url().toLowerCase();
+            const resourceType = request.resourceType();
+
+            // ✅ 1. กฎเหล็ก: ห้ามบล็อกอะไรก็ตามที่เป็นของ Cloudflare หรือ Google (Captcha)
+            if (reqUrl.includes('cloudflare') || reqUrl.includes('turnstile') || reqUrl.includes('google.com/recaptcha')) {
+                request.continue();
+                return;
+            }
+
+            // ✅ 2. ยอมให้โหลด Font (บางเว็บใช้ Font icon แสดงผล Captcha)
+            // ลบ 'font' ออกจากรายการแบน
+            if (['media', 'websocket', 'manifest', 'image'].includes(resourceType)) {
                 request.abort();
             } else {
                 request.continue();
@@ -91,11 +101,33 @@ const scrapeAndGeneratePdf = async (req, res) => {
         });
 
         console.log(`🔗 Navigating to: ${url}`);
-        // เพิ่มเวลา Timeout เผื่อ Cloudflare ตรวจสอบนาน
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+        // เพิ่ม Timeout เป็น 2 นาที เผื่อเว็บช้า
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
         
-        // 🔥 รอเพิ่ม 6 วินาที (Cloudflare ปกติจะหมุนติ้วๆ ประมาณ 3-5 วิ แล้วจะปล่อยผ่านถ้าเราเนียนพอ)
-        await new Promise(r => setTimeout(r, 6000));
+        // ============================================================
+        // 🎭 ACTING CLASS: แสดงละครว่าเป็นคน (Human Behavior)
+        // ============================================================
+        console.log("🎭 Simulating human behavior...");
+        
+        try {
+            // 1. ขยับเมาส์มั่วๆ (Cloudflare ชอบเช็คเมาส์)
+            await page.mouse.move(Math.floor(Math.random() * 500), Math.floor(Math.random() * 500));
+            await page.mouse.down();
+            await new Promise(r => setTimeout(r, 200));
+            await page.mouse.up();
+            await page.mouse.move(Math.floor(Math.random() * 500), Math.floor(Math.random() * 500));
+
+            // 2. เลื่อนหน้าจอนิดหน่อย (Scroll)
+            await page.evaluate(() => {
+                window.scrollBy(0, 300);
+            });
+        } catch (e) {
+            console.log("⚠️ Mouse simulation failed (minor issue)");
+        }
+
+        // 3. รอให้ Cloudflare หมุนเสร็จ (เพิ่มเป็น 15 วินาที สำหรับ Free Tier)
+        console.log("⏳ Waiting for content load & Cloudflare check...");
+        await new Promise(r => setTimeout(r, 15000));
 
         // ============================================================
         // 🧹 Cleaning & Compressing (สูตร V14.1)
