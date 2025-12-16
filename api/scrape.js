@@ -1,14 +1,16 @@
 const chromium = require('@sparticuz/chromium');
 const puppeteer = require('puppeteer-core');
 
+// ----------------------------------------------------------------------
+// 1. getBrowser Function (ถูกปรับให้ใช้ Render/Server Env โดยตรง)
+// ----------------------------------------------------------------------
 const getBrowser = async () => {
-    const isVercel = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_VERSION;
     
     // 🔥 Argument Set ที่แข็งแกร่งที่สุดสำหรับแก้ libnss3.so
     const launchArgs = [
         '--no-sandbox', 
         '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage', // <--- ตัวนี้สำคัญมาก
+        '--disable-dev-shm-usage',
         '--disable-accelerated-video-decode',
         '--disable-accelerated-video-encode',
         '--disable-gpu',
@@ -20,32 +22,24 @@ const getBrowser = async () => {
         '--mute-audio'
     ];
 
-    if (isVercel) {
-        return puppeteer.launch({
-            args: launchArgs, 
-            defaultViewport: chromium.defaultViewport,
-            executablePath: await chromium.executablePath(),
-            headless: chromium.headless,
-            // 🚨 บังคับให้ใช้ Argument ของเรา
-            ignoreDefaultArgs: ['--disable-extensions'], 
-            ignoreHTTPSErrors: true
-        });
-    } else {
-        // ... (ส่วน else ใช้โค้ดเดิม)
-        return puppeteer.launch({
-            args: launchArgs,
-            defaultViewport: { width: 1366, height: 768 }, 
-            executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', 
-            headless: "new",
-            ignoreHTTPSErrors: true
-        });
-    }
+    // เนื่องจาก Render เป็น Full Web Service เราจึงใช้ Logic ที่แข็งแกร่งสำหรับ Cloud/Lambda
+    return puppeteer.launch({
+        args: launchArgs, 
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath(),
+        headless: chromium.headless,
+        ignoreDefaultArgs: ['--disable-extensions'], 
+        ignoreHTTPSErrors: true
+    });
+    
+    // 🚨 Logic การเปิด Browser สำหรับ Local Machine ถูกลบออก (เพื่อ Deploy บน Render เท่านั้น)
 };
 
-module.exports = async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    if (req.method === 'OPTIONS') { res.status(200).end(); return; }
+// ----------------------------------------------------------------------
+// 2. Main Logic Function (คง Logic การทำงานเดิม 100%)
+// ----------------------------------------------------------------------
+const scrapeAndGeneratePdf = async (req, res) => {
+    // 🚨 Logic การตั้งค่า CORS และ OPTIONS ถูกย้ายไปอยู่ใน server.js แล้ว
 
     const { url, date, title } = req.query; 
     
@@ -196,3 +190,6 @@ module.exports = async (req, res) => {
         if (browser) await browser.close();
     }
 };
+
+// 3. Export เป็น Express Middleware
+module.exports = scrapeAndGeneratePdf;
