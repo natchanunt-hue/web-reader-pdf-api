@@ -6,29 +6,35 @@ const path = require('path'); // ✅ บรรทัดนี้คุณมี�
 // 1. getBrowser Function
 // ----------------------------------------------------------------------
 const getBrowser = async () => {
-    
-    // ✅✅✅ เพิ่มบรรทัดนี้ด่วน! (ไม่งั้นภาษาไทยไม่มา) ✅✅✅
-    // อธิบาย: สั่งให้ Chrome โหลดไฟล์ฟอนต์จากโฟลเดอร์ fonts ที่อยู่ข้างนอก
+    // โหลดฟอนต์ (เหมือนเดิม)
     await chromium.font(path.join(__dirname, '../fonts', 'Sarabun-Regular.ttf'));
 
-    // 🔥 Argument Set (เหมือนเดิม)
-    const launchArgs = [
-        '--no-sandbox', 
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-video-decode',
-        '--disable-accelerated-video-encode',
-        '--disable-gpu',
-        '--single-process',
-        '--no-zygote',
-        '--no-sandbox',
-        '--window-size=1920x1080',
-        '--hide-scrollbars',
-        '--mute-audio'
-    ];
+    // 🔥 ถ้าอยู่บน Cloud Run ให้ใช้ Chrome ของระบบ
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        return puppeteer.launch({
+            args: [
+                '--no-sandbox', 
+                '--disable-setuid-sandbox', 
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--no-zygote',
+                '--single-process'
+            ],
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH, 
+            headless: 'new',
+            defaultViewport: chromium.defaultViewport
+        });
+    }
 
+    // 💻 ถ้าอยู่บนเครื่องเรา/Render (ใช้ code เดิม)
     return puppeteer.launch({
-        args: launchArgs, 
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--mute-audio'
+        ], 
         defaultViewport: chromium.defaultViewport,
         executablePath: await chromium.executablePath(),
         headless: chromium.headless,
