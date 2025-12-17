@@ -1,15 +1,15 @@
 const chromium = require('@sparticuz/chromium');
 const puppeteer = require('puppeteer-core');
-const path = require('path'); // ✅ บรรทัดนี้คุณมีแล้ว (ดีมาก)
+const path = require('path'); 
 
 // ----------------------------------------------------------------------
 // 1. getBrowser Function
 // ----------------------------------------------------------------------
 const getBrowser = async () => {
-    // โหลดฟอนต์ (เหมือนเดิม)
+    // โหลดฟอนต์ 
     await chromium.font(path.join(__dirname, '../fonts', 'Sarabun-Regular.ttf'));
 
-    // 🔥 ถ้าอยู่บน Cloud Run ให้ใช้ Chrome ของระบบ
+    // 🔥 ถ้าอยู่บน Cloud Run ให้ใช้ Chrome ของระบบ (Chromium ที่เราสั่งลงเอง)
     if (process.env.PUPPETEER_EXECUTABLE_PATH) {
         return puppeteer.launch({
             args: [
@@ -26,7 +26,7 @@ const getBrowser = async () => {
         });
     }
 
-    // 💻 ถ้าอยู่บนเครื่องเรา/Render (ใช้ code เดิม)
+    // 💻 ถ้าอยู่บนเครื่องเรา (ใช้ code เดิม)
     return puppeteer.launch({
         args: [
             '--no-sandbox', 
@@ -44,46 +44,40 @@ const getBrowser = async () => {
 };
 
 // ----------------------------------------------------------------------
-// 2. Main Logic Function (คง Logic การทำงานเดิม 100%)
+// 2. Main Logic Function
 // ----------------------------------------------------------------------
 const scrapeAndGeneratePdf = async (req, res) => {
-    // 🚨 Logic การตั้งค่า CORS และ OPTIONS ถูกย้ายไปอยู่ใน server.js แล้ว
-
     const { url, date, title } = req.query; 
     
     if (!url) return res.status(400).json({ error: 'URL is required' });
 
     let browser = null;
     try {
-        console.log("🚀 Launching Browser V15 (Stealth Mode)...");
+        console.log("🚀 Launching Browser V16 (Unblock WebSocket)...");
         browser = await getBrowser();
         const page = await browser.newPage();
 
         // ============================================================
-        // 🥷 STEALTH TACTICS: การปลอมตัว (สำคัญมากสำหรับ Cloudflare)
+        // 🥷 STEALTH TACTICS
         // ============================================================
         
-        // 1. ปลอม User-Agent ให้เหมือนคนใช้ Mac จริงๆ
         const userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         await page.setUserAgent(userAgent);
 
-        // 2. ตั้งค่า Header ภาษา (Cloudflare ชอบเช็ค)
         await page.setExtraHTTPHeaders({
             'Accept-Language': 'th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'Upgrade-Insecure-Requests': '1'
         });
 
-        // 3. ลบรอยสัก Robot (navigator.webdriver) ก่อนเว็บโหลด
         await page.evaluateOnNewDocument(() => {
             Object.defineProperty(navigator, 'webdriver', { get: () => false });
-            // ปลอม Plugins เล็กน้อย
             Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
             window.chrome = { runtime: {} };
         });
 
         // ============================================================
-        // 📥 Loading Content (ฉบับแก้ Cloudflare)
+        // 📥 Loading Content (จุดที่แก้ไข!)
         // ============================================================
         
         await page.setRequestInterception(true);
@@ -91,15 +85,14 @@ const scrapeAndGeneratePdf = async (req, res) => {
             const reqUrl = request.url().toLowerCase();
             const resourceType = request.resourceType();
 
-            // ✅ 1. กฎเหล็ก: ห้ามบล็อกอะไรก็ตามที่เป็นของ Cloudflare หรือ Google (Captcha)
-            if (reqUrl.includes('cloudflare') || reqUrl.includes('turnstile') || reqUrl.includes('google.com/recaptcha')) {
+            // ✅ 1. กฎเหล็ก: ปล่อยผ่านทุกอย่างที่เกี่ยวกับ Cloudflare และ Google
+            if (reqUrl.includes('cloudflare') || reqUrl.includes('turnstile') || reqUrl.includes('google') || reqUrl.includes('captcha')) {
                 request.continue();
                 return;
             }
 
-            // ✅ 2. ยอมให้โหลด Font และ Image (เพื่อให้รูปข่าวมา)
-            // เราลบ 'image' ออกจากรายการแบนแล้ว
-            if (['media', 'websocket', 'manifest'].includes(resourceType)) {
+            // ✅ 2. เอา 'websocket' ออกจากรายการบล็อกแล้ว (เพื่อให้ผ่าน Dailynews ได้)
+            if (['media', 'manifest'].includes(resourceType)) {
                 request.abort();
             } else {
                 request.continue();
@@ -107,23 +100,20 @@ const scrapeAndGeneratePdf = async (req, res) => {
         });
 
         console.log(`🔗 Navigating to: ${url}`);
-        // เพิ่ม Timeout เป็น 2 นาที เผื่อเว็บช้า
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
         
         // ============================================================
-        // 🎭 ACTING CLASS: แสดงละครว่าเป็นคน (Human Behavior)
+        // 🎭 ACTING CLASS
         // ============================================================
         console.log("🎭 Simulating human behavior...");
         
         try {
-            // 1. ขยับเมาส์มั่วๆ (Cloudflare ชอบเช็คเมาส์)
             await page.mouse.move(Math.floor(Math.random() * 500), Math.floor(Math.random() * 500));
             await page.mouse.down();
             await new Promise(r => setTimeout(r, 200));
             await page.mouse.up();
             await page.mouse.move(Math.floor(Math.random() * 500), Math.floor(Math.random() * 500));
 
-            // 2. เลื่อนหน้าจอนิดหน่อย (Scroll)
             await page.evaluate(() => {
                 window.scrollBy(0, 300);
             });
@@ -131,16 +121,14 @@ const scrapeAndGeneratePdf = async (req, res) => {
             console.log("⚠️ Mouse simulation failed (minor issue)");
         }
 
-        // 3. รอให้ Cloudflare หมุนเสร็จ (เพิ่มเป็น 15 วินาที สำหรับ Free Tier)
         console.log("⏳ Waiting for content load & Cloudflare check...");
         await new Promise(r => setTimeout(r, 15000));
 
         // ============================================================
-        // 🧹 Cleaning & Compressing (สูตร V14.2 Safe Mode)
+        // 🧹 Cleaning & Compressing
         // ============================================================
         await page.evaluate(async () => {
             try {
-                // A. ลบ Popup / Ads
                 const clutter = document.querySelectorAll(
                     '.modal, .overlay, .popup, .cookie-consent, #cookie-consent, .ads-interstitial, ' + 
                     'iframe, .ads, .advertisement, div[id^="div-gpt-ad"], .taboola, .outbrain, .box-relate, ' +
@@ -149,11 +137,9 @@ const scrapeAndGeneratePdf = async (req, res) => {
                 );
                 clutter.forEach(el => el.remove());
 
-                // B. ปลดล็อค Scroll (ใส่ if ป้องกัน Error)
                 if (document.body) document.body.style.overflow = 'visible';
                 if (document.documentElement) document.documentElement.style.overflow = 'visible';
 
-                // C. บีบอัดรูปภาพ
                 const images = document.querySelectorAll('img');
                 for (let img of images) {
                     if (img.src && !img.src.endsWith('.svg')) {
@@ -172,7 +158,6 @@ const scrapeAndGeneratePdf = async (req, res) => {
                     }
                 }
             } catch (err) {
-                // ถ้ามี error ในส่วน clean ให้ข้ามไปเลย ไม่ต้องพังทั้งระบบ
                 console.log('Cleanup minor error:', err.message);
             }
         });
@@ -181,23 +166,17 @@ const scrapeAndGeneratePdf = async (req, res) => {
         // 🎨 CSS Injection
         // ============================================================
         await page.addStyleTag({
-    content: `
-        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
-
-        /* 🚨 แก้ไขบรรทัดนี้: เพิ่ม Thonburi, Tahoma เป็น Fallback */
-        body { background-color: #fff !important; font-family: 'Sarabun', Thonburi, Tahoma, sans-serif !important; margin: 0 !important; padding: 0 !important; }
-
-        /* บังคับใช้ฟอนต์ในการพิมพ์ */
-        @media print {
-            * {
-                font-family: 'Sarabun', Thonburi, Tahoma, sans-serif !important;
-            }
-        }
-
-        header, nav, .navbar, .menu, .top-bar { position: static !important; display: block !important; width: 100% !important; }
-        /* ... โค้ด CSS ส่วนที่เหลือ ... */
-    `
-});
+            content: `
+                @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+                body { background-color: #fff !important; font-family: 'Sarabun', Thonburi, Tahoma, sans-serif !important; margin: 0 !important; padding: 0 !important; }
+                @media print {
+                    * {
+                        font-family: 'Sarabun', Thonburi, Tahoma, sans-serif !important;
+                    }
+                }
+                header, nav, .navbar, .menu, .top-bar { position: static !important; display: block !important; width: 100% !important; }
+            `
+        });
 
         // ============================================================
         // 💾 Metadata & Print
@@ -240,5 +219,4 @@ const scrapeAndGeneratePdf = async (req, res) => {
     }
 };
 
-// 3. Export เป็น Express Middleware
 module.exports = scrapeAndGeneratePdf;

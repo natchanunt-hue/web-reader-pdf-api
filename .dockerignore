@@ -1,4 +1,7 @@
 node_modules
-npm-debug.log
-.git
+.env
 .DS_Store
+.git
+.gitignore
+Dockerfile
+README.md
