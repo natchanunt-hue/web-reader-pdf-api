@@ -1,8 +1,8 @@
 FROM ghcr.io/puppeteer/puppeteer:23.10.1
 
-# 🔥 บอกระบบว่า: ไม่ต้องโหลดเพิ่ม และ Chrome ตัวจริงอยู่ที่นี่!
+# 🔥 บอกระบบว่า: ใช้ Chromium ตัวที่กำลังจะติดตั้งนี้นะ!
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /usr/src/app
 
@@ -10,7 +10,9 @@ COPY package*.json ./
 
 USER root
 RUN npm install
-RUN apt-get update && apt-get install -y fonts-thai-tlwg && rm -rf /var/lib/apt/lists/*
+
+# 🛠️ สั่งติดตั้ง Chromium และฟอนต์ไทยให้ชัวร์ๆ (ไม้ตาย)
+RUN apt-get update && apt-get install -y chromium fonts-thai-tlwg && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 RUN chown -R pptruser:pptruser /usr/src/app
