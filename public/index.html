@@ -13,7 +13,7 @@
         button { background: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-size: 16px; cursor: pointer; width: 100%; transition: 0.3s; }
         button:hover { background: #1d4ed8; }
         button:disabled { background: #ccc; cursor: not-allowed; }
-        #status { margin-top: 20px; color: #666; font-size: 14px; min-height: 20px; }
+        #status { margin-top: 20px; color: #666; font-size: 14px; min-height: 20px; white-space: pre-wrap; }
         .tips { font-size: 12px; color: #999; margin-top: 20px; text-align: left; }
     </style>
 </head>
@@ -21,16 +21,16 @@
 
 <div class="card">
     <h2>📄 Web to PDF (Pro)</h2>
-    <p>ระบบจำลอง Browser จริง ภาพครบ 100%</p>
+    <p>ระบบจำลอง Browser จริง (แก้ Cloudflare)</p>
     
-    <input type="text" id="urlInput" placeholder="วางลิงก์ข่าวที่นี่... (Sanook, Siamrath, etc.)">
+    <input type="text" id="urlInput" placeholder="วางลิงก์ข่าวที่นี่... (เช่น Dailynews, Sanook)">
     <button id="btnDownload" onclick="downloadPdf()">ดาวน์โหลด PDF</button>
     
     <div id="status"></div>
 
     <div class="tips">
-        * ระบบจะทำการเปิดหน้าเว็บจริง ลบโฆษณา และบันทึกเป็น PDF<br>
-        * อาจใช้เวลา 5-10 วินาที ขึ้นอยู่กับความเร็วของเว็บต้นทาง
+        * ระบบจะจำลองการเปิดเว็บจริง อาจใช้เวลา 10-30 วินาที<br>
+        * หากกดแล้วนิ่งเกิน 1 นาที ให้กดซ้ำอีกครั้ง (Server อาจกำลังตื่น)
     </div>
 </div>
 
@@ -44,46 +44,60 @@
 
         // UI Loading
         btn.disabled = true;
-        btn.innerText = "กำลังประมวลผล (เปิดหน้าเว็บจริง)...";
-        status.innerText = "⏳ ระบบกำลังเปิด Chrome เพื่อบันทึกหน้าเว็บ กรุณารอสักครู่...";
+        btn.innerText = "กำลังประมวลผล...";
+        status.innerText = "⏳ กำลังเรียก Chrome เพื่อเปิดหน้าเว็บ (อาจใช้เวลาหน่อย)...";
+        status.style.color = "#666";
 
         try {
-            // เรียก Backend เพื่อขอไฟล์ PDF
+            // เรียก Backend
             const response = await fetch(`/api/scrape?url=${encodeURIComponent(url)}`);
 
+            // เช็คว่า Server ตอบกลับมาเป็น Error หรือไม่
             if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || 'เกิดข้อผิดพลาด');
+                const text = await response.text();
+                try {
+                    // พยายามอ่าน Error แบบ JSON
+                    const errJson = JSON.parse(text);
+                    throw new Error(errJson.error || 'เกิดข้อผิดพลาดจาก Server');
+                } catch (e) {
+                    // ถ้าอ่าน JSON ไม่ได้ แสดงว่า Server ล่ม (HTML error)
+                    throw new Error(`Server Error (${response.status}): อาจเกิดจาก Memory เต็ม หรือ Cloud Run กำลังเริ่มต้น`);
+                }
             }
 
-            // รับข้อมูล Header เพื่อมาตั้งชื่อไฟล์
-            const title = decodeURIComponent(response.headers.get('X-Title') || 'document');
-            const site = response.headers.get('X-Site') || 'Web';
-            const dateStr = response.headers.get('X-Date');
-            
-            // จัดการวันที่สำหรับชื่อไฟล์
-            let fileDate = new Date().toISOString().split('T')[0];
-            if (dateStr) {
-                const d = new Date(dateStr);
-                if (!isNaN(d)) fileDate = d.toISOString().split('T')[0];
+            // ✅ ส่วนที่แก้: ดึงชื่อไฟล์จาก Header Content-Disposition โดยตรง
+            const disposition = response.headers.get('Content-Disposition');
+            let filename = `document_${new Date().getTime()}.pdf`;
+
+            if (disposition) {
+                // พยายามแกะชื่อไฟล์ภาษาไทยที่ Backend ส่งมา
+                const match = disposition.match(/filename\*=UTF-8''(.+)/);
+                if (match && match[1]) {
+                    filename = decodeURIComponent(match[1]);
+                }
             }
 
-            // แปลงข้อมูลที่ได้เป็นไฟล์ PDF (Blob)
+            // แปลงเป็นไฟล์และดาวน์โหลด
             const blob = await response.blob();
             const downloadUrl = window.URL.createObjectURL(blob);
             
-            // สร้างลิงก์ดาวน์โหลดจำลองแล้วกดคลิก
             const a = document.createElement('a');
             a.href = downloadUrl;
-            a.download = `${fileDate}_${site}_${title.substring(0, 30)}.pdf`; // ชื่อไฟล์: 2023-12-16_Siamrath_หัวข้อ.pdf
+            a.download = filename; 
             document.body.appendChild(a);
             a.click();
             a.remove();
+            
+            // คืนทรัพยากร
+            window.URL.revokeObjectURL(downloadUrl);
 
-            status.innerText = "✅ ดาวน์โหลดเสร็จสิ้น!";
+            status.innerText = "✅ เสร็จสิ้น! ไฟล์ถูกดาวน์โหลดแล้ว";
+            status.style.color = "green";
 
         } catch (error) {
+            console.error(error);
             status.innerText = "❌ ผิดพลาด: " + error.message;
+            status.style.color = "red";
         } finally {
             btn.disabled = false;
             btn.innerText = "ดาวน์โหลด PDF";

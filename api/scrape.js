@@ -1,199 +1,220 @@
 const chromium = require('@sparticuz/chromium');
-const puppeteer = require('puppeteer-core');
-const path = require('path'); 
+const puppeteerCore = require('puppeteer-core');
+const { addExtra } = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const path = require('path');
+
+const puppeteer = addExtra(puppeteerCore);
+puppeteer.use(StealthPlugin());
 
 // ----------------------------------------------------------------------
 // 1. getBrowser Function
 // ----------------------------------------------------------------------
 const getBrowser = async () => {
-    // โหลดฟอนต์ 
-    await chromium.font(path.join(__dirname, '../fonts', 'Sarabun-Regular.ttf'));
+    try {
+        await chromium.font(path.join(__dirname, '../fonts', 'Sarabun-Regular.ttf'));
+    } catch (e) {}
 
-    // 🔥 ถ้าอยู่บน Cloud Run ให้ใช้ Chrome ของระบบ (Chromium ที่เราสั่งลงเอง)
-    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-        return puppeteer.launch({
-            args: [
-                '--no-sandbox', 
-                '--disable-setuid-sandbox', 
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--no-zygote',
-                '--single-process'
-            ],
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH, 
-            headless: 'new',
-            defaultViewport: chromium.defaultViewport
-        });
+    const commonArgs = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--single-process',
+        '--hide-scrollbars',
+        '--mute-audio',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--font-render-hinting=none',
+        '--force-color-profile=srgb'
+    ];
+
+    let executablePath;
+    if (process.platform === 'darwin' || process.platform === 'win32') {
+        executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    } else {
+        executablePath = await chromium.executablePath();
     }
 
-    // 💻 ถ้าอยู่บนเครื่องเรา (ใช้ code เดิม)
     return puppeteer.launch({
-        args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--mute-audio'
-        ], 
+        args: commonArgs,
         defaultViewport: chromium.defaultViewport,
-        executablePath: await chromium.executablePath(),
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || executablePath,
         headless: chromium.headless,
-        ignoreDefaultArgs: ['--disable-extensions'], 
         ignoreHTTPSErrors: true
     });
 };
 
 // ----------------------------------------------------------------------
-// 2. Main Logic Function
+// 2. Auto Scroll
+// ----------------------------------------------------------------------
+async function autoScroll(page) {
+    await page.evaluate(async () => {
+        await new Promise((resolve) => {
+            var totalHeight = 0;
+            var distance = 100;
+            var timer = setInterval(() => {
+                var scrollHeight = document.body.scrollHeight;
+                window.scrollBy(0, distance);
+                totalHeight += distance;
+                if(totalHeight >= scrollHeight - window.innerHeight || totalHeight > 30000){
+                    clearInterval(timer);
+                    resolve();
+                }
+            }, 100);
+        });
+    });
+}
+
+// ----------------------------------------------------------------------
+// 3. Main Logic
 // ----------------------------------------------------------------------
 const scrapeAndGeneratePdf = async (req, res) => {
-    const { url, date, title } = req.query; 
-    
+    // ✅ รับค่าจาก App (Team Tawee Command)
+    const { url, date, title } = req.query;
+
     if (!url) return res.status(400).json({ error: 'URL is required' });
+
+    const isKhaosod = url.includes('khaosod');
 
     let browser = null;
     try {
-        console.log("🚀 Launching Browser V16 (Unblock WebSocket)...");
+        console.log(`🚀 Launching Browser (${isKhaosod ? 'Khaosod Reader Mode' : 'Normal Mode'})...`);
         browser = await getBrowser();
         const page = await browser.newPage();
 
-        // ============================================================
-        // 🥷 STEALTH TACTICS
-        // ============================================================
+        await page.setBypassCSP(true);
+        await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
         
-        const userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-        await page.setUserAgent(userAgent);
-
-        await page.setExtraHTTPHeaders({
-            'Accept-Language': 'th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Upgrade-Insecure-Requests': '1'
-        });
-
-        await page.evaluateOnNewDocument(() => {
-            Object.defineProperty(navigator, 'webdriver', { get: () => false });
-            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-            window.chrome = { runtime: {} };
-        });
-
-        // ============================================================
-        // 📥 Loading Content (จุดที่แก้ไข!)
-        // ============================================================
-        
-        await page.setRequestInterception(true);
-        page.on('request', (request) => {
-            const reqUrl = request.url().toLowerCase();
-            const resourceType = request.resourceType();
-
-            // ✅ 1. กฎเหล็ก: ปล่อยผ่านทุกอย่างที่เกี่ยวกับ Cloudflare และ Google
-            if (reqUrl.includes('cloudflare') || reqUrl.includes('turnstile') || reqUrl.includes('google') || reqUrl.includes('captcha')) {
-                request.continue();
-                return;
-            }
-
-            // ✅ 2. เอา 'websocket' ออกจากรายการบล็อกแล้ว (เพื่อให้ผ่าน Dailynews ได้)
-            if (['media', 'manifest'].includes(resourceType)) {
-                request.abort();
-            } else {
-                request.continue();
-            }
-        });
-
         console.log(`🔗 Navigating to: ${url}`);
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
-        
-        // ============================================================
-        // 🎭 ACTING CLASS
-        // ============================================================
-        console.log("🎭 Simulating human behavior...");
-        
-        try {
-            await page.mouse.move(Math.floor(Math.random() * 500), Math.floor(Math.random() * 500));
-            await page.mouse.down();
-            await new Promise(r => setTimeout(r, 200));
-            await page.mouse.up();
-            await page.mouse.move(Math.floor(Math.random() * 500), Math.floor(Math.random() * 500));
 
-            await page.evaluate(() => {
-                window.scrollBy(0, 300);
+        if (isKhaosod) {
+            // 🔥🔥🔥 KHAOSOD READER MODE 🔥🔥🔥
+            
+            // 1. เข้าเว็บ
+            await page.goto(url, { waitUntil: 'networkidle2', timeout: 90000 });
+            
+            // 2. Scroll โหลดรูป
+            console.log("⬇️ Scrolling to load images...");
+            await autoScroll(page);
+            await new Promise(r => setTimeout(r, 5000));
+
+            // 3. ดูดข้อมูล
+            const articleData = await page.evaluate(() => {
+                const h1 = document.querySelector('h1')?.innerText || document.title;
+                const contentEl = document.querySelector('.entry-content') || 
+                                  document.querySelector('.ud-content') || 
+                                  document.querySelector('article') ||
+                                  document.body;
+                let bodyHTML = contentEl.innerHTML;
+
+                const dateEl = document.querySelector('.entry-date') || 
+                               document.querySelector('time') || 
+                               document.querySelector('.date');
+                const dateText = dateEl ? dateEl.innerText : new Date().toISOString().split('T')[0];
+
+                return { h1, bodyHTML, dateText };
             });
-        } catch (e) {
-            console.log("⚠️ Mouse simulation failed (minor issue)");
+
+            // 4. สร้างหน้าใหม่ (Reader Mode)
+            console.log("📝 Rewriting page content...");
+            
+            // ✅ จุดแก้ไขสำคัญ: ใช้ Title/Date จาก App ก่อน (ถ้ามี)
+            const displayTitle = title || articleData.h1;
+            const displayDate = date || articleData.dateText;
+
+            const cleanHtml = `
+                <html>
+                <head>
+                    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+                    <style>
+                        body { 
+                            font-family: 'Sarabun', sans-serif !important; 
+                            padding: 40px; 
+                            background: #fff; 
+                            color: #000;
+                        }
+                        h1 { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+                        .meta-date { color: #666; font-size: 14px; margin-bottom: 20px; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
+                        img { max-width: 100%; height: auto; margin: 10px 0; display: block; }
+                        p { font-size: 16px; line-height: 1.6; margin-bottom: 15px; }
+                        .ads, .banner, iframe, script, .relate-news { display: none !important; }
+                    </style>
+                </head>
+                <body>
+                    <h1>${displayTitle}</h1>
+                    <div class="meta-date">วันที่: ${displayDate}</div>
+                    <div class="content-body">
+                        ${articleData.bodyHTML}
+                    </div>
+                </body>
+                </html>
+            `;
+
+            // ใช้ domcontentloaded เพื่อกัน Timeout
+            await page.setContent(cleanHtml, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await new Promise(r => setTimeout(r, 3000));
+
+        } else {
+            // 🔥 NORMAL MODE (เว็บอื่นๆ)
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            
+            console.log("⚔️ Checking Cloudflare...");
+            try {
+                await new Promise(r => setTimeout(r, 2000));
+                const titleText = await page.title();
+                if (titleText.toLowerCase().includes('just a moment') || titleText.includes('Cloudflare')) {
+                    const frames = page.frames();
+                    for (const frame of frames) {
+                        try {
+                            const box = await frame.$('input[type="checkbox"]');
+                            if (box) {
+                                await box.click();
+                                await new Promise(r => setTimeout(r, 4000));
+                            }
+                        } catch(e) {}
+                    }
+                }
+            } catch (e) {}
+
+            console.log("⬇️ Scrolling...");
+            await autoScroll(page);
+            await new Promise(r => setTimeout(r, 3000));
+
+            await page.addStyleTag({
+                content: `
+                    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+                    * { font-family: 'Sarabun', 'Tahoma', 'Arial', sans-serif !important; }
+                `
+            });
+
+            console.log("🧹 Cleaning...");
+            await page.evaluate(() => {
+                const trash = ['.modal', '.popup', '#cookie-consent', '.cookie-banner', '.ads-interstitial', '.overlay', 'iframe', 'header', 'footer'];
+                trash.forEach(s => document.querySelectorAll(s).forEach(el => el.remove()));
+                document.querySelectorAll('*').forEach(el => {
+                    const style = window.getComputedStyle(el);
+                    if ((style.position === 'fixed' || style.position === 'sticky') && el.tagName !== 'BODY') el.remove();
+                });
+                document.body.style.backgroundColor = '#ffffff';
+                document.body.style.overflow = 'visible';
+            });
         }
 
-        console.log("⏳ Waiting for content load & Cloudflare check...");
-        await new Promise(r => setTimeout(r, 15000));
-
-        // ============================================================
-        // 🧹 Cleaning & Compressing
-        // ============================================================
-        await page.evaluate(async () => {
-            try {
-                const clutter = document.querySelectorAll(
-                    '.modal, .overlay, .popup, .cookie-consent, #cookie-consent, .ads-interstitial, ' + 
-                    'iframe, .ads, .advertisement, div[id^="div-gpt-ad"], .taboola, .outbrain, .box-relate, ' +
-                    '.social-share, .share-buttons, .sticky-share, .floating-bar, ' +
-                    'footer, aside, .sidebar'
-                );
-                clutter.forEach(el => el.remove());
-
-                if (document.body) document.body.style.overflow = 'visible';
-                if (document.documentElement) document.documentElement.style.overflow = 'visible';
-
-                const images = document.querySelectorAll('img');
-                for (let img of images) {
-                    if (img.src && !img.src.endsWith('.svg')) {
-                        try {
-                            const canvas = document.createElement('canvas');
-                            const ctx = canvas.getContext('2d');
-                            let w = img.naturalWidth || img.width;
-                            let h = img.naturalHeight || img.height;
-                            if (w > 1000) { const s = 1000/w; w=1000; h=h*s; }
-                            if (w < 50) continue;
-                            canvas.width = w; canvas.height = h;
-                            ctx.drawImage(img, 0, 0, w, h);
-                            img.src = canvas.toDataURL('image/jpeg', 0.5); 
-                            img.removeAttribute('srcset'); 
-                        } catch (e) {}
-                    }
-                }
-            } catch (err) {
-                console.log('Cleanup minor error:', err.message);
-            }
+        // ✅ สร้างชื่อไฟล์
+        const meta = await page.evaluate(() => {
+            let t = document.title.replace('|', '-').trim();
+            let d = new Date().toISOString().split('T')[0];
+            return { t, d };
         });
 
-        // ============================================================
-        // 🎨 CSS Injection
-        // ============================================================
-        await page.addStyleTag({
-            content: `
-                @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
-                body { background-color: #fff !important; font-family: 'Sarabun', Thonburi, Tahoma, sans-serif !important; margin: 0 !important; padding: 0 !important; }
-                @media print {
-                    * {
-                        font-family: 'Sarabun', Thonburi, Tahoma, sans-serif !important;
-                    }
-                }
-                header, nav, .navbar, .menu, .top-bar { position: static !important; display: block !important; width: 100% !important; }
-            `
-        });
-
-        // ============================================================
-        // 💾 Metadata & Print
-        // ============================================================
-        let finalTitle = title;
-        let finalDate = date;
+        // ใช้ค่าจาก App เป็นหลัก
+        let finalTitle = title || meta.t || 'news';
+        let finalDate = date || meta.d || new Date().toISOString().split('T')[0];
         let siteName = (new URL(url).hostname).replace('www.', '').split('.')[0];
 
-        if (!finalTitle || !finalDate) {
-            const scraped = await page.evaluate(() => {
-                const t = document.title.replace('|', '-').split('-')[0].trim();
-                const d = new Date().toISOString().split('T')[0];
-                return { t, d };
-            });
-            if (!finalTitle) finalTitle = scraped.t;
-            if (!finalDate) finalDate = scraped.d;
-        }
+        const safeTitle = finalTitle.replace(/[^a-zA-Z0-9ก-๙\s\-_]/g, '').substring(0, 100);
+        const filename = `${finalDate}_${siteName}_${safeTitle}.pdf`;
 
         const pdfBuffer = await page.pdf({
             format: 'A4',
@@ -202,18 +223,16 @@ const scrapeAndGeneratePdf = async (req, res) => {
             scale: 0.85
         });
 
+        console.log(`✅ Success: ${filename}`);
+
         res.setHeader('Content-Type', 'application/pdf');
-        const safeTitle = (finalTitle || 'document').replace(/[^a-zA-Z0-9ก-๙\s\-_]/g, '').substring(0, 100); 
-        const filename = `${finalDate}_${siteName}_${safeTitle}.pdf`;
         const encodedFilename = encodeURIComponent(filename);
         res.setHeader('Content-Disposition', `attachment; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`);
-
         res.send(pdfBuffer);
-        console.log(`✅ Saved as: ${filename}`);
 
     } catch (error) {
         console.error("❌ Error:", error);
-        res.status(500).json({ error: 'Error: ' + error.message });
+        res.status(500).json({ error: error.message });
     } finally {
         if (browser) await browser.close();
     }

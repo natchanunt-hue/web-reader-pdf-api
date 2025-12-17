@@ -1,7 +1,7 @@
 {
   "name": "cmd-pdf-generator",
   "version": "1.0.0",
-  "description": "PDF generation API using Puppeteer for Render (Final CSS Fix)", 
+  "description": "PDF generation API using Puppeteer for Render (Final CSS Fix)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -9,9 +9,11 @@
     "build": "echo 'Building Render Node Service...'"
   },
   "dependencies": {
-    "@sparticuz/chromium": "^123.0.1",  
-    "puppeteer-core": "^22.0.0",
+    "@sparticuz/chromium": "^123.0.1",
+    "cors": "^2.8.5",
     "express": "^4.18.2",
-    "cors": "^2.8.5"
+    "puppeteer-core": "^22.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
 }

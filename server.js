@@ -1,26 +1,29 @@
-// server.js (สำหรับ Render)
 const express = require('express');
-const cors = require('cors');
 const path = require('path');
-
-// เรียกใช้ฟังก์ชัน Backend ที่เราเขียนไว้ใน folder api
-const scrapeHandler = require('./api/scrape');
+const scrapeHandler = require('./api/scrape'); // เรียกใช้ไฟล์ scrape ที่เราแก้ไป
 
 const app = express();
-const PORT = process.env.PORT || 10000; // Render จะกำหนด PORT ให้เรา
+const PORT = process.env.PORT || 8080; // Cloud Run บังคับใช้ PORT นี้
 
-app.use(cors());
-app.use(express.json());
+// 1. อนุญาตให้เข้าถึงไฟล์ใน public (index.html)
+app.use(express.static(path.join(__dirname, 'public')));
 
-// 1. ตั้ง Route API
-// เมื่อเรียก /api/scrape ให้ไปเรียกฟังก์ชันใน api/scrape.js
-app.get('/api/scrape', scrapeHandler); // ใช้ scrapeHandler เดิม
+// 2. สร้างเส้นทางสำหรับ API (จุดสำคัญที่แก้ 404)
+app.get('/api/scrape', async (req, res) => {
+    try {
+        await scrapeHandler(req, res);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
-// 2. เสิร์ฟไฟล์ static อื่นๆ (ถ้ามี)
-// Render มักไม่ใช้สำหรับไฟล์ Frontend แต่เราเผื่อไว้
-app.use(express.static(path.join(__dirname, 'public'))); 
+// 3. ถ้าเข้าลิงก์อื่นที่ไม่รู้จัก ให้ส่งหน้า index.html ไปให้
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
+// เริ่มต้น Server
 app.listen(PORT, () => {
-    console.log(`✅ Render Server running!`);
-    console.log(`Listening on port ${PORT}`);
+    console.log(`✅ Server is running on port ${PORT}`);
 });
