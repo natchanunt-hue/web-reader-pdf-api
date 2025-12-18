@@ -3,104 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web to PDF (Server Side)</title>
+    <title>PDF Generator (API Test - Full Option)</title>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Sarabun', sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
-        h2 { margin-top: 0; color: #333; }
-        input { width: 100%; padding: 12px; margin: 20px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
-        button { background: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-size: 16px; cursor: pointer; width: 100%; transition: 0.3s; }
+        body { font-family: 'Sarabun', sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 450px; }
+        h2 { margin-top: 0; color: #333; text-align: center; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; color: #555; }
+        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        button { background: #2563eb; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 16px; cursor: pointer; width: 100%; margin-top: 10px; transition: 0.2s; }
         button:hover { background: #1d4ed8; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        #status { margin-top: 20px; color: #666; font-size: 14px; min-height: 20px; white-space: pre-wrap; }
-        .tips { font-size: 12px; color: #999; margin-top: 20px; text-align: left; }
+        button:disabled { background: #ccc; }
+        #status { margin-top: 15px; font-size: 13px; text-align: center; white-space: pre-wrap; color: #666; }
+        .note { font-size: 12px; color: #888; margin-top: 4px; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h2>📄 Web to PDF (Pro)</h2>
-    <p>ระบบจำลอง Browser จริง (แก้ Cloudflare)</p>
+    <h2>📄 ทดสอบสร้าง PDF (แบบมีรูปปก)</h2>
     
-    <input type="text" id="urlInput" placeholder="วางลิงก์ข่าวที่นี่... (เช่น Dailynews, Sanook)">
-    <button id="btnDownload" onclick="downloadPdf()">ดาวน์โหลด PDF</button>
-    
-    <div id="status"></div>
-
-    <div class="tips">
-        * ระบบจะจำลองการเปิดเว็บจริง อาจใช้เวลา 10-30 วินาที<br>
-        * หากกดแล้วนิ่งเกิน 1 นาที ให้กดซ้ำอีกครั้ง (Server อาจกำลังตื่น)
+    <div class="form-group">
+        <label>1. ลิงก์ข่าว (URL ต้นฉบับ)</label>
+        <input type="text" id="urlInput" placeholder="https://..." value="https://siamrath.co.th/politics/national-politics/117111">
+        <div class="note">*ใช้ดูดเนื้อหา Text เท่านั้น</div>
     </div>
+
+    <div class="form-group">
+        <label>2. หัวข้อข่าว (Title)</label>
+        <input type="text" id="titleInput" placeholder="ใส่หัวข้อ..." value="พ.ต.อ.ทวี ลั่นเดินหน้าพรรคประชาชาติ เปิดตัวว่าที่ผู้สมัคร ส.ส.ปัตตานี">
+    </div>
+
+    <div class="form-group">
+        <label>3. วันที่ (Date)</label>
+        <input type="text" id="dateInput" placeholder="เช่น 14 ธ.ค. 68" value="15 ธ.ค. 68 15:12 น.">
+    </div>
+
+    <div class="form-group">
+        <label>4. ลิงก์รูปปก (Cover Image URL)</label>
+        <input type="text" id="imageInput" placeholder="https://..." value="https://siamrath.co.th/media/KVunBvWg8dY57O2MI0lSDpx4QbF">
+        <div class="note">*รูปนี้จะถูกฝังลงไปใน PDF โดยตรง</div>
+    </div>
+
+    <button id="btnDownload" onclick="downloadPdf()">🚀 สร้าง PDF</button>
+    <div id="status"></div>
 </div>
 
 <script>
     async function downloadPdf() {
         const url = document.getElementById('urlInput').value;
+        const title = document.getElementById('titleInput').value;
+        const dateText = document.getElementById('dateInput').value;
+        const imageUrl = document.getElementById('imageInput').value; // ✅ รับค่ารูปปก
+        
         const btn = document.getElementById('btnDownload');
         const status = document.getElementById('status');
 
-        if (!url) return alert('กรุณาใส่ลิงก์ก่อนครับ');
+        if (!url) return alert('ใส่ลิงก์ข่าวด้วยนะครับ');
 
-        // UI Loading
         btn.disabled = true;
         btn.innerText = "กำลังประมวลผล...";
-        status.innerText = "⏳ กำลังเรียก Chrome เพื่อเปิดหน้าเว็บ (อาจใช้เวลาหน่อย)...";
+        status.innerText = "⏳ กำลังดึงเนื้อหาและฝังรูปปก...";
         status.style.color = "#666";
 
         try {
-            // เรียก Backend
-            const response = await fetch(`/api/scrape?url=${encodeURIComponent(url)}`);
+            // ✅ สร้าง Query String (รวม image_url ไปด้วย)
+            const params = new URLSearchParams({
+                url: url,
+                title: title,
+                date_text: dateText,
+                image_url: imageUrl // ส่งไปให้ Backend
+            });
 
-            // เช็คว่า Server ตอบกลับมาเป็น Error หรือไม่
+            const apiUrl = `/api/scrape?${params.toString()}`;
+            
+            const response = await fetch(apiUrl);
+
             if (!response.ok) {
                 const text = await response.text();
-                try {
-                    // พยายามอ่าน Error แบบ JSON
-                    const errJson = JSON.parse(text);
-                    throw new Error(errJson.error || 'เกิดข้อผิดพลาดจาก Server');
-                } catch (e) {
-                    // ถ้าอ่าน JSON ไม่ได้ แสดงว่า Server ล่ม (HTML error)
-                    throw new Error(`Server Error (${response.status}): อาจเกิดจาก Memory เต็ม หรือ Cloud Run กำลังเริ่มต้น`);
-                }
+                throw new Error(text || `Server Error: ${response.status}`);
             }
 
-            // ✅ ส่วนที่แก้: ดึงชื่อไฟล์จาก Header Content-Disposition โดยตรง
+            // รับชื่อไฟล์จาก Header
+            let filename = "document.pdf";
             const disposition = response.headers.get('Content-Disposition');
-            let filename = `document_${new Date().getTime()}.pdf`;
-
             if (disposition) {
-                // พยายามแกะชื่อไฟล์ภาษาไทยที่ Backend ส่งมา
                 const match = disposition.match(/filename\*=UTF-8''(.+)/);
-                if (match && match[1]) {
-                    filename = decodeURIComponent(match[1]);
-                }
+                if (match && match[1]) filename = decodeURIComponent(match[1]);
             }
 
-            // แปลงเป็นไฟล์และดาวน์โหลด
             const blob = await response.blob();
             const downloadUrl = window.URL.createObjectURL(blob);
-            
             const a = document.createElement('a');
             a.href = downloadUrl;
-            a.download = filename; 
+            a.download = filename;
             document.body.appendChild(a);
             a.click();
             a.remove();
             
-            // คืนทรัพยากร
-            window.URL.revokeObjectURL(downloadUrl);
-
-            status.innerText = "✅ เสร็จสิ้น! ไฟล์ถูกดาวน์โหลดแล้ว";
+            status.innerText = "✅ เสร็จเรียบร้อย!";
             status.style.color = "green";
 
         } catch (error) {
             console.error(error);
-            status.innerText = "❌ ผิดพลาด: " + error.message;
+            status.innerText = "❌ เกิดข้อผิดพลาด: " + error.message;
             status.style.color = "red";
         } finally {
             btn.disabled = false;
-            btn.innerText = "ดาวน์โหลด PDF";
+            btn.innerText = "🚀 สร้าง PDF";
         }
     }
 </script>

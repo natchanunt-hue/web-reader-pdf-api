@@ -2,236 +2,258 @@ const chromium = require('@sparticuz/chromium');
 const puppeteerCore = require('puppeteer-core');
 const { addExtra } = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const path = require('path');
+const { Readability } = require('@mozilla/readability');
+const { JSDOM } = require('jsdom');
 
 const puppeteer = addExtra(puppeteerCore);
 puppeteer.use(StealthPlugin());
 
-// ----------------------------------------------------------------------
-// 1. getBrowser Function
-// ----------------------------------------------------------------------
-const getBrowser = async () => {
+// ฟังก์ชันแปลงลิงก์รูปเป็น Base64
+async function imageUrlToBase64(url) {
+    if (!url) return null;
     try {
-        await chromium.font(path.join(__dirname, '../fonts', 'Sarabun-Regular.ttf'));
-    } catch (e) {}
-
-    const commonArgs = [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--single-process',
-        '--hide-scrollbars',
-        '--mute-audio',
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--font-render-hinting=none',
-        '--force-color-profile=srgb'
-    ];
-
-    let executablePath;
-    if (process.platform === 'darwin' || process.platform === 'win32') {
-        executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-    } else {
-        executablePath = await chromium.executablePath();
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const contentType = response.headers.get('content-type') || 'image/jpeg';
+        return `data:${contentType};base64,${buffer.toString('base64')}`;
+    } catch (error) {
+        console.warn(`⚠️ Failed to load cover image: ${url}`);
+        return null;
     }
-
-    return puppeteer.launch({
-        args: commonArgs,
-        defaultViewport: chromium.defaultViewport,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || executablePath,
-        headless: chromium.headless,
-        ignoreHTTPSErrors: true
-    });
-};
-
-// ----------------------------------------------------------------------
-// 2. Auto Scroll
-// ----------------------------------------------------------------------
-async function autoScroll(page) {
-    await page.evaluate(async () => {
-        await new Promise((resolve) => {
-            var totalHeight = 0;
-            var distance = 100;
-            var timer = setInterval(() => {
-                var scrollHeight = document.body.scrollHeight;
-                window.scrollBy(0, distance);
-                totalHeight += distance;
-                if(totalHeight >= scrollHeight - window.innerHeight || totalHeight > 30000){
-                    clearInterval(timer);
-                    resolve();
-                }
-            }, 100);
-        });
-    });
 }
 
-// ----------------------------------------------------------------------
-// 3. Main Logic
-// ----------------------------------------------------------------------
+// ✅ ฟังก์ชันจัดรูปแบบชื่อไฟล์: 2025-12-16_14-20_WebName_Title.pdf
+function generateFilename(isoDateString, url, title) {
+    let dateStr = "";
+    
+    // 1. แปลงวันที่จาก ISO String (ที่รับมาจาก Frontend) เป็น YYYY-MM-DD_HH-mm
+    try {
+        const d = new Date(isoDateString);
+        // ปรับเวลาให้เป็น Local Time (ไทย +7) แบบ Manual เพื่อความชัวร์ในชื่อไฟล์
+        // (หรือจะใช้ UTC ก็ได้แล้วแต่ชอบ แต่โค้ดนี้จะพยายามอิงตามวันที่ส่งมา)
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const min = String(d.getMinutes()).padStart(2, '0');
+        
+        dateStr = `${yyyy}-${mm}-${dd}_${hh}-${min}`;
+    } catch (e) {
+        // กันเหนียว: ถ้าแปลงไม่ได้จริงๆ ให้ใช้วันปัจจุบัน
+        dateStr = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-');
+    }
+
+    // 2. ดึงชื่อเว็บ: www.khaosod.co.th -> khaosod
+    let siteName = "website";
+    try {
+        const hostname = new URL(url).hostname;
+        siteName = hostname.replace('www.', '').split('.')[0];
+    } catch (e) {}
+
+    // 3. จัดการ Title: ลบอักขระพิเศษ เว้นวรรคเปลี่ยนเป็น _
+    const safeTitle = title.replace(/[^a-zA-Z0-9ก-๙]/g, '_').substring(0, 60);
+
+    // ผลลัพธ์: 2025-12-16_14-20_khaosod_นายกเปิดงาน.pdf
+    return `${dateStr}_${siteName}_${safeTitle}.pdf`;
+}
+
+// ฟังก์ชันแปลงวันที่เพื่อโชว์ใน PDF (แบบสวยงาม: 16 ธ.ค. 2568 14:20 น.)
+function formatDisplayDate(isoDateString) {
+    try {
+        const d = new Date(isoDateString);
+        return d.toLocaleDateString('th-TH', {
+            day: 'numeric', month: 'short', year: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+        }) + " น.";
+    } catch (e) {
+        return isoDateString;
+    }
+}
+
 const scrapeAndGeneratePdf = async (req, res) => {
-    // ✅ รับค่าจาก App (Team Tawee Command)
-    const { url, date, title } = req.query;
+    const { url, title, date_text, image_url } = req.query;
 
     if (!url) return res.status(400).json({ error: 'URL is required' });
 
-    const isKhaosod = url.includes('khaosod');
+    const customTitle = title || 'Document';
+    
+    // แปลงวันที่สำหรับโชว์ใน PDF
+    const displayDate = formatDisplayDate(date_text || new Date().toISOString());
 
     let browser = null;
     try {
-        console.log(`🚀 Launching Browser (${isKhaosod ? 'Khaosod Reader Mode' : 'Normal Mode'})...`);
-        browser = await getBrowser();
-        const page = await browser.newPage();
-
-        await page.setBypassCSP(true);
-        await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
+        console.log(`🚀 Processing: ${customTitle}`);
         
-        console.log(`🔗 Navigating to: ${url}`);
+        // โหลดรูปปก (Parallel)
+        const coverImagePromise = imageUrlToBase64(image_url);
 
-        if (isKhaosod) {
-            // 🔥🔥🔥 KHAOSOD READER MODE 🔥🔥🔥
-            
-            // 1. เข้าเว็บ
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 90000 });
-            
-            // 2. Scroll โหลดรูป
-            console.log("⬇️ Scrolling to load images...");
-            await autoScroll(page);
-            await new Promise(r => setTimeout(r, 5000));
-
-            // 3. ดูดข้อมูล
-            const articleData = await page.evaluate(() => {
-                const h1 = document.querySelector('h1')?.innerText || document.title;
-                const contentEl = document.querySelector('.entry-content') || 
-                                  document.querySelector('.ud-content') || 
-                                  document.querySelector('article') ||
-                                  document.body;
-                let bodyHTML = contentEl.innerHTML;
-
-                const dateEl = document.querySelector('.entry-date') || 
-                               document.querySelector('time') || 
-                               document.querySelector('.date');
-                const dateText = dateEl ? dateEl.innerText : new Date().toISOString().split('T')[0];
-
-                return { h1, bodyHTML, dateText };
-            });
-
-            // 4. สร้างหน้าใหม่ (Reader Mode)
-            console.log("📝 Rewriting page content...");
-            
-            // ✅ จุดแก้ไขสำคัญ: ใช้ Title/Date จาก App ก่อน (ถ้ามี)
-            const displayTitle = title || articleData.h1;
-            const displayDate = date || articleData.dateText;
-
-            const cleanHtml = `
-                <html>
-                <head>
-                    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
-                    <style>
-                        body { 
-                            font-family: 'Sarabun', sans-serif !important; 
-                            padding: 40px; 
-                            background: #fff; 
-                            color: #000;
-                        }
-                        h1 { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
-                        .meta-date { color: #666; font-size: 14px; margin-bottom: 20px; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
-                        img { max-width: 100%; height: auto; margin: 10px 0; display: block; }
-                        p { font-size: 16px; line-height: 1.6; margin-bottom: 15px; }
-                        .ads, .banner, iframe, script, .relate-news { display: none !important; }
-                    </style>
-                </head>
-                <body>
-                    <h1>${displayTitle}</h1>
-                    <div class="meta-date">วันที่: ${displayDate}</div>
-                    <div class="content-body">
-                        ${articleData.bodyHTML}
-                    </div>
-                </body>
-                </html>
-            `;
-
-            // ใช้ domcontentloaded เพื่อกัน Timeout
-            await page.setContent(cleanHtml, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            await new Promise(r => setTimeout(r, 3000));
-
+        // เลือก Chrome
+        let exePath;
+        if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+            exePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+        } else if (process.platform === 'darwin') {
+            exePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
         } else {
-            // 🔥 NORMAL MODE (เว็บอื่นๆ)
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            
-            console.log("⚔️ Checking Cloudflare...");
-            try {
-                await new Promise(r => setTimeout(r, 2000));
-                const titleText = await page.title();
-                if (titleText.toLowerCase().includes('just a moment') || titleText.includes('Cloudflare')) {
-                    const frames = page.frames();
-                    for (const frame of frames) {
-                        try {
-                            const box = await frame.$('input[type="checkbox"]');
-                            if (box) {
-                                await box.click();
-                                await new Promise(r => setTimeout(r, 4000));
-                            }
-                        } catch(e) {}
-                    }
-                }
-            } catch (e) {}
-
-            console.log("⬇️ Scrolling...");
-            await autoScroll(page);
-            await new Promise(r => setTimeout(r, 3000));
-
-            await page.addStyleTag({
-                content: `
-                    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
-                    * { font-family: 'Sarabun', 'Tahoma', 'Arial', sans-serif !important; }
-                `
-            });
-
-            console.log("🧹 Cleaning...");
-            await page.evaluate(() => {
-                const trash = ['.modal', '.popup', '#cookie-consent', '.cookie-banner', '.ads-interstitial', '.overlay', 'iframe', 'header', 'footer'];
-                trash.forEach(s => document.querySelectorAll(s).forEach(el => el.remove()));
-                document.querySelectorAll('*').forEach(el => {
-                    const style = window.getComputedStyle(el);
-                    if ((style.position === 'fixed' || style.position === 'sticky') && el.tagName !== 'BODY') el.remove();
-                });
-                document.body.style.backgroundColor = '#ffffff';
-                document.body.style.overflow = 'visible';
-            });
+            exePath = await chromium.executablePath();
         }
 
-        // ✅ สร้างชื่อไฟล์
-        const meta = await page.evaluate(() => {
-            let t = document.title.replace('|', '-').trim();
-            let d = new Date().toISOString().split('T')[0];
-            return { t, d };
+        browser = await puppeteer.launch({
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-web-security'
+            ],
+            defaultViewport: { width: 1280, height: 800 },
+            executablePath: exePath,
+            headless: 'new',
+            ignoreHTTPSErrors: true
         });
 
-        // ใช้ค่าจาก App เป็นหลัก
-        let finalTitle = title || meta.t || 'news';
-        let finalDate = date || meta.d || new Date().toISOString().split('T')[0];
-        let siteName = (new URL(url).hostname).replace('www.', '').split('.')[0];
+        const page = await browser.newPage();
+        page.setDefaultNavigationTimeout(0); 
+        page.setDefaultTimeout(0); 
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
 
-        const safeTitle = finalTitle.replace(/[^a-zA-Z0-9ก-๙\s\-_]/g, '').substring(0, 100);
-        const filename = `${finalDate}_${siteName}_${safeTitle}.pdf`;
+        // 🔥 SUPER TURBO MODE: Text Only!
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+            const resourceType = req.resourceType();
+            // บล็อกหมด ยกเว้น Document/Script (เพราะเรามีรูปปกจาก Frontend แล้ว)
+            if (['image', 'media', 'font', 'stylesheet', 'other', 'websocket'].includes(resourceType)) {
+                req.abort();
+            } else {
+                req.continue();
+            }
+        });
 
+        // เข้าเว็บดูด Text
+        try {
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await new Promise(r => setTimeout(r, 2000));
+        } catch (e) {
+            console.warn("⚠️ Navigation warning: " + e.message);
+        }
+
+        const contentHtml = await page.content();
+        
+        // แกะเนื้อหา
+        const dom = new JSDOM(contentHtml, { url: url });
+        const reader = new Readability(dom.window.document);
+        const article = reader.parse();
+        
+        let finalContent = article ? article.content : dom.window.document.body.innerHTML;
+
+        // Clean
+        if (finalContent) {
+            finalContent = finalContent.replace(/(word\s?){3,}/gi, ''); 
+            finalContent = finalContent.replace(/<img[^>]*>/gi, ''); 
+            finalContent = finalContent.replace(/<video[^>]*>[\s\S]*?<\/video>/gi, ''); 
+            finalContent = finalContent.replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/gi, ''); 
+            finalContent = finalContent.replace(/<svg[^>]*>[\s\S]*?<\/svg>/gi, '');
+        }
+
+        if (!finalContent || finalContent.length < 100) {
+             throw new Error('ไม่สามารถดึงเนื้อหาข่าวได้');
+        }
+
+        const coverImageBase64 = await coverImagePromise;
+
+        // ✅ HTML TEMPLATE
+        const cleanHtml = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+                <style>
+                    body { font-family: 'Sarabun', sans-serif; padding: 40px; color: #333; line-height: 1.6; }
+                    
+                    .header { margin-bottom: 30px; border-bottom: 2px solid #ddd; padding-bottom: 20px; }
+                    h1 { font-size: 26px; color: #000; margin: 10px 0; line-height: 1.3; font-weight: bold; }
+                    
+                    /* ส่วน Meta Data */
+                    .meta-table { width: 100%; font-size: 14px; color: #555; margin-top: 10px; }
+                    .meta-table td { padding: 2px 0; vertical-align: top; }
+                    .meta-label { font-weight: bold; width: 80px; }
+                    .meta-value a { color: #2563eb; text-decoration: none; word-break: break-all; }
+                    
+                    /* Cover Image */
+                    .cover-container {
+                        text-align: center;
+                        margin-bottom: 30px;
+                        background-color: #f9f9f9;
+                        border-radius: 8px;
+                        padding: 10px;
+                    }
+                    .cover-image {
+                        width: 100%;
+                        max-height: 450px;
+                        object-fit: contain;
+                        border-radius: 6px;
+                    }
+
+                    .content { font-size: 16px; text-align: justify; }
+                    p { margin-bottom: 15px; }
+                    
+                    .ssd-slot, .ads, .banner { display: none !important; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>${customTitle}</h1>
+                    
+                    <table class="meta-table">
+                        <tr>
+                            <td class="meta-label">วันที่:</td>
+                            <td class="meta-value">${displayDate}</td>
+                        </tr>
+                        <tr>
+                            <td class="meta-label">ที่มา:</td>
+                            <td class="meta-value">${new URL(url).hostname}</td>
+                        </tr>
+                        <tr>
+                            <td class="meta-label">ลิงก์ข่าว:</td>
+                            <td class="meta-value"><a href="${url}" target="_blank">${url}</a></td>
+                        </tr>
+                    </table>
+                </div>
+
+                ${coverImageBase64 ? `
+                <div class="cover-container">
+                    <img src="${coverImageBase64}" class="cover-image">
+                </div>` : ''}
+                
+                <div class="content">
+                    ${finalContent} 
+                </div>
+            </body>
+            </html>
+        `;
+
+        await page.setContent(cleanHtml, { waitUntil: 'load', timeout: 30000 });
+        
         const pdfBuffer = await page.pdf({
             format: 'A4',
             printBackground: true,
-            margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
-            scale: 0.85
+            margin: { top: '15mm', bottom: '15mm', left: '15mm', right: '15mm' }
         });
 
-        console.log(`✅ Success: ${filename}`);
+        // ✅ สร้างชื่อไฟล์แบบตัวเลขที่ต้องการ
+        const finalFilename = generateFilename(date_text, url, customTitle);
+        const encodedFilename = encodeURIComponent(finalFilename);
 
+        console.log(`✅ Success: ${finalFilename}`);
+        
         res.setHeader('Content-Type', 'application/pdf');
-        const encodedFilename = encodeURIComponent(filename);
         res.setHeader('Content-Disposition', `attachment; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`);
         res.send(pdfBuffer);
 
     } catch (error) {
-        console.error("❌ Error:", error);
+        console.error("❌ Error:", error.message);
         res.status(500).json({ error: error.message });
     } finally {
         if (browser) await browser.close();

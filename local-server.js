@@ -7,13 +7,13 @@ const path = require('path');
 const scrapeHandler = require('./api/scrape');
 
 const app = express();
-const PORT = 3000;
+
+// ✅ แก้ตรงนี้: ให้รับ Port จาก Google Cloud (ถ้าไม่มีค่อยใช้ 3000)
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
-// ✅ 1. แก้ Route API ให้ตรงกับหน้าเว็บ (ลบ /web-reader ออก)
-// เมื่อหน้าเว็บเรียก /api/scrape ก็จะเจอทันที
 app.get('/api/scrape', async (req, res) => {
     try {
         console.log(`📥 Received request: ${req.query.url}`);
@@ -24,15 +24,13 @@ app.get('/api/scrape', async (req, res) => {
     }
 });
 
-// ✅ 2. ตั้งค่าให้เข้าหน้าเว็บได้ง่ายๆ ที่หน้าแรก (Root)
-app.use(express.static('public')); // ให้ดึงไฟล์ใน public (index.html, css) มาแสดงอัตโนมัติ
+app.use(express.static('public')); 
 
-// (เผื่อไว้) ถ้าเข้า /web-reader ก็ให้เด้งไป index.html เหมือนกัน
 app.get('/web-reader', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
-    console.log(`✅ Local Server running!`);
-    console.log(`👉 กดเข้าใช้งานที่นี่: http://localhost:${PORT}`);
+// ✅ แก้ตรงนี้: ให้ Listen ที่ 0.0.0.0 เพื่อให้ Cloud Run เข้าถึงได้
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Server running on port ${PORT}`);
 });
